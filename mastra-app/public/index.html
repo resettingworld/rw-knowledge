@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mastra RAG Studio | Gemma 4 E4B + EmbeddingGemma 2</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .prose p { margin-bottom: 0.75rem; }
+    .prose ul, .prose ol { margin-left: 1.25rem; margin-bottom: 0.75rem; list-style-type: disc; }
+    .prose h1, .prose h2, .prose h3 { color: #f8fafc; font-weight: 700; margin-top: 1rem; margin-bottom: 0.5rem; }
+    .citation-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background-color: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      margin: 0.15rem 0.2rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .citation-badge:hover {
+      background-color: rgba(16, 185, 129, 0.3);
+      border-color: #34d399;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans">
+
+  <!-- Top Navigation Bar -->
+  <header class="bg-slate-800/90 backdrop-blur border-b border-slate-700 px-5 py-3 flex items-center justify-between z-10 shadow-md">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-900 font-black text-xl shadow-lg shadow-emerald-500/20">
+        🧠
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="font-bold text-lg text-white">Kev · Assistent Intel·ligent</h1>
+          <span id="engine-header-badge" class="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            🦀 Rust Core + Gemma 4 E4B
+          </span>
+        </div>
+        <p class="text-xs text-slate-400">Tota la biblioteca connectada • Triatge Sistema 1 • Gemma 4 E4B</p>
+      </div>
+    </div>
+
+    <!-- Right Controls: Active RAG Status, Bunker Mode Toggle & Library Button -->
+    <div class="flex items-center space-x-3">
+      <!-- Bunker Mode Toggle (Zero-LLM desactivat per defecte) -->
+      <div class="flex items-center bg-slate-900/90 border border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+        <label class="flex items-center gap-2 cursor-pointer select-none" title="Activa l'extracció directa de dades sense generació LLM (sub-70ms)">
+          <input type="checkbox" id="bunker-mode-toggle" class="sr-only peer">
+          <div class="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-amber-500 relative"></div>
+          <span id="bunker-mode-label" class="font-medium text-slate-400 peer-checked:text-amber-400">🛡️ Búnquer (Zero-LLM)</span>
+        </label>
+      </div>
+
+      <!-- Active RAG status indicator (Tots els paquets entren en joc automàticament) -->
+      <div class="flex items-center bg-slate-900/90 border border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span>
+        <span class="text-slate-400 mr-1.5 font-medium">Àmbit:</span>
+        <span class="text-emerald-400 font-bold">Tota la Biblioteca (Auto-Triatge Kev)</span>
+      </div>
+
+      <!-- Button to toggle Library/Packages Drawer -->
+      <button id="toggle-library-btn" class="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 text-xs font-bold flex items-center gap-2 transition shadow-lg shadow-emerald-600/20">
+        <span>📚</span>
+        <span>Biblioteca Digital</span>
+        <span id="header-pkg-count" class="px-1.5 py-0.2 bg-slate-950/40 text-white text-[10px] rounded-full font-bold">0</span>
+      </button>
+
+      <button id="clear-chat-btn" title="Limpiar conversación" class="p-2 rounded-lg bg-slate-850 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 transition">
+        🗑️
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="flex-1 flex overflow-hidden relative">
+
+    <!-- Chat Area -->
+    <main class="flex-1 flex flex-col bg-slate-900 overflow-hidden">
+      <!-- Messages List -->
+      <div id="messages-container" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+        
+        <!-- Welcome Message -->
+        <div class="flex items-start space-x-3 max-w-3xl">
+          <div class="w-9 h-9 rounded-lg bg-emerald-600/30 border border-emerald-500/50 flex items-center justify-center text-lg flex-shrink-0">
+            🧠
+          </div>
+          <div class="flex-1 bg-slate-800/90 border border-slate-700 rounded-2xl rounded-tl-none p-5 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-semibold text-emerald-400 text-sm">Kev (Gemma 4 E4B + SmartEngine)</span>
+              <span id="welcome-rag-badge" class="px-2 py-0.5 rounded text-[10px] bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 font-semibold">Tots els Paquets Actius</span>
+            </div>
+            <div class="prose text-slate-200 text-sm leading-relaxed space-y-2">
+              <p>¡Hola! Sóc en <strong>Kev</strong>, el teu agent intel·ligent de coneixement orquestrat amb <strong>Mastra</strong> i impulsat per <strong>Gemma 4 E4B</strong>, <strong>EmbeddingGemma 2</strong> i el motor natiu <strong>SmartEngine</strong>.</p>
+              <p><strong>No cal que seleccionis cap paquet manualment:</strong> en el mateix moment en què fas una pregunta, tota la biblioteca de manuals entra en joc. El meu sistema de triatge avalua i activa a l'instant els documents pertinents per donar-te respostes fonamentades amb <strong>citacions exactes del llibre i número de pàgina</strong>.</p>
+              <p class="text-xs text-slate-400">💡 <em>Per defecte el sistema de <strong>Zero-LLM està desactivat</strong> per oferir-te una síntesi conversacional completa. Si necessites una extracció ultraràpida en situacions crítiques, pots activar el mode <strong>🛡️ Búnquer</strong> a dalt a la dreta.</em></p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Quick Suggested Prompts Bar -->
+      <div class="px-4 sm:px-6 pt-2 pb-1 border-t border-slate-800/80 flex items-center gap-2 overflow-x-auto no-scrollbar">
+        <span class="text-xs text-slate-400 font-medium whitespace-nowrap">💡 Consultas de ejemplo:</span>
+        <button class="quick-prompt-btn px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 hover:text-white transition whitespace-nowrap">
+          🌴 Estic a la selva i tinc sed, com puc obtenir aigua?
+        </button>
+        <button class="quick-prompt-btn px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 hover:text-white transition whitespace-nowrap">
+          🔥 ¿Cómo purificar agua en caso de emergencia?
+        </button>
+        <button class="quick-prompt-btn px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 hover:text-white transition whitespace-nowrap">
+          🩹 Pasos de RCP básica según la Cruz Roja
+        </button>
+        <button class="quick-prompt-btn px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 hover:text-white transition whitespace-nowrap">
+          🎒 ¿Qué debe llevar la mochila de 72 horas?
+        </button>
+      </div>
+
+      <!-- Chat Input Form -->
+      <div class="p-4 sm:p-6 bg-slate-900 border-t border-slate-800">
+        <form id="chat-form" class="max-w-4xl mx-auto flex items-end gap-3">
+          <div class="flex-1 relative">
+            <textarea
+              id="user-input"
+              rows="2"
+              placeholder="Pregunta a Gemma 4 sobre el paquete seleccionado (ej: ¿Cómo construir un refugio contra el frío?)..."
+              class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none leading-relaxed"
+            ></textarea>
+          </div>
+          <button
+            type="submit"
+            id="send-btn"
+            class="h-12 px-6 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span>Enviar</span>
+            <span>➤</span>
+          </button>
+        </form>
+        <div class="text-center mt-2 flex items-center justify-center gap-3 text-xs text-slate-500">
+          <span>Mastra Core Agent v1.82</span>
+          <span>•</span>
+          <span id="footer-rag-name">Paquete activo: supervivencia-es</span>
+          <span>•</span>
+          <span>EmbeddingGemma 2 (768-d)</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Side Drawer: Digital Library & Package Manager -->
+    <aside id="library-drawer" class="w-full sm:w-[520px] bg-slate-800/98 backdrop-blur border-l border-slate-700 flex flex-col transition-all duration-300 translate-x-full absolute right-0 top-0 bottom-0 z-30 shadow-2xl">
+      
+      <!-- Drawer Header with View Mode indicator -->
+      <div class="p-4 border-b border-slate-700 flex items-center justify-between bg-slate-850">
+        <div id="drawer-header-content" class="flex items-center gap-2">
+          <!-- Populated by JS based on view: Packages View or Books View -->
+        </div>
+        <button id="close-library-btn" class="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition">
+          ✕
+        </button>
+      </div>
+
+      <!-- VIEW A: List of Installed Knowledge Packages -->
+      <div id="view-packages" class="flex-1 flex flex-col overflow-hidden">
+        <!-- Packages actions bar -->
+        <div class="p-3 bg-slate-900/60 border-b border-slate-700/60 flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-300">📦 Paquetes Instalados</span>
+          <button id="btn-open-create-rag-modal" class="px-2.5 py-1 rounded bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-400 border border-emerald-500/40 text-xs font-bold transition flex items-center gap-1">
+            <span>+</span> Nuevo Paquete RAG
+          </button>
+        </div>
+
+        <!-- Packages List Container -->
+        <div id="packages-list" class="flex-1 overflow-y-auto p-4 space-y-3">
+          <div class="text-center py-8 text-slate-500 text-xs animate-pulse">Cargando paquetes de conocimiento...</div>
+        </div>
+      </div>
+
+      <!-- VIEW B: List of Books/Manuals inside a Specific Package -->
+      <div id="view-books" class="flex-1 flex flex-col overflow-hidden hidden">
+        <!-- Package Info Banner -->
+        <div class="p-3 bg-slate-900/80 border-b border-slate-700 flex items-center justify-between">
+          <div>
+            <h3 id="current-pkg-name" class="font-bold text-sm text-white">Nombre del Paquete</h3>
+            <p id="current-pkg-stats" class="text-[11px] text-slate-400">19 libros • 1,591 páginas • 3,243 chunks</p>
+          </div>
+          <button id="btn-upload-book" class="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition shadow-sm">
+            <span>+</span>
+            <span>Subir Libro / PDF</span>
+          </button>
+          <input type="file" id="book-file-input" accept=".pdf,.txt,.md,.png,.jpg,.jpeg" class="hidden" />
+        </div>
+
+        <!-- Upload Progress Alert Banner (hidden by default) -->
+        <div id="upload-status-banner" class="hidden p-3 bg-emerald-950/60 border-b border-emerald-800 text-xs text-emerald-300 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+            <span id="upload-status-text">Procesando y vectorizando nuevo libro...</span>
+          </div>
+        </div>
+
+        <!-- Search filter for books -->
+        <div class="p-3 border-b border-slate-700/60">
+          <input
+            type="text"
+            id="search-books-input"
+            placeholder="Filtrar libros por título o palabra..."
+            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+        </div>
+
+        <!-- Books List Container -->
+        <div id="books-list" class="flex-1 overflow-y-auto p-4 space-y-3">
+          <div class="text-center py-8 text-slate-500 text-xs animate-pulse">Cargando libros del paquete...</div>
+        </div>
+      </div>
+
+    </aside>
+
+  </div>
+
+  <!-- Modal: Crear Nuevo Paquete RAG -->
+  <div id="modal-create-rag" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold text-base text-white flex items-center gap-2">
+          <span>📦</span> Crear Nuevo Paquete de Conocimiento
+        </h3>
+        <button id="modal-close-btn" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+
+      <form id="create-rag-form" class="space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Identificador Único (RAG ID)</label>
+          <input
+            type="text"
+            id="new-rag-id"
+            placeholder="ej: medicina-urgencias, manual-tecnico"
+            required
+            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+          <span class="text-[10px] text-slate-500">Solo letras minúsculas, números y guiones.</span>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Nombre Descriptivo</label>
+          <input
+            type="text"
+            id="new-rag-name"
+            placeholder="ej: Manual de Medicina y Urgencias"
+            required
+            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Descripción</label>
+          <textarea
+            id="new-rag-desc"
+            rows="2"
+            placeholder="Descripción del conocimiento que almacenará este paquete..."
+            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          ></textarea>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Etiquetas (separadas por comas)</label>
+          <input
+            type="text"
+            id="new-rag-tags"
+            placeholder="medicina, urgencias, protocolos"
+            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+        </div>
+
+        <div class="pt-2 flex justify-end gap-2">
+          <button type="button" id="modal-cancel-btn" class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium">
+            Cancelar
+          </button>
+          <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+            Crear Paquete
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let installedRags = [];
+    let currentSelectedRagId = 'supervivencia-es';
+    let currentPackageBooks = [];
+    let activeChatRagId = 'all'; // Tota la biblioteca entra en joc des del primer segon
+    let currentDrawerMode = 'packages'; // 'packages' | 'books'
+
+    // DOM Elements
+    const libraryDrawer = document.getElementById('library-drawer');
+    const toggleLibraryBtn = document.getElementById('toggle-library-btn');
+    const closeLibraryBtn = document.getElementById('close-library-btn');
+    const drawerHeaderContent = document.getElementById('drawer-header-content');
+    const viewPackages = document.getElementById('view-packages');
+    const viewBooks = document.getElementById('view-books');
+    const packagesList = document.getElementById('packages-list');
+    const booksList = document.getElementById('books-list');
+    const footerRagName = document.getElementById('footer-rag-name');
+    const headerPkgCount = document.getElementById('header-pkg-count');
+
+    const btnUploadBook = document.getElementById('btn-upload-book');
+    const bookFileInput = document.getElementById('book-file-input');
+    const uploadStatusBanner = document.getElementById('upload-status-banner');
+    const uploadStatusText = document.getElementById('upload-status-text');
+    const searchBooksInput = document.getElementById('search-books-input');
+
+    const modalCreateRag = document.getElementById('modal-create-rag');
+    const btnOpenCreateRagModal = document.getElementById('btn-open-create-rag-modal');
+    const modalCloseBtn = document.getElementById('modal-close-btn');
+    const modalCancelBtn = document.getElementById('modal-cancel-btn');
+    const createRagForm = document.getElementById('create-rag-form');
+
+    const messagesContainer = document.getElementById('messages-container');
+    const chatForm = document.getElementById('chat-form');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    const clearChatBtn = document.getElementById('clear-chat-btn');
+
+    // Drawer Toggling
+    toggleLibraryBtn.addEventListener('click', () => {
+      libraryDrawer.classList.toggle('translate-x-full');
+      loadPackages();
+    });
+    closeLibraryBtn.addEventListener('click', () => {
+      libraryDrawer.classList.add('translate-x-full');
+    });
+
+    // Clear Chat
+    clearChatBtn.addEventListener('click', () => {
+      if (confirm('¿Deseas vaciar los mensajes del chat?')) {
+        messagesContainer.innerHTML = '';
+      }
+    });
+
+    // Quick Prompts
+    document.querySelectorAll('.quick-prompt-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        userInput.value = btn.innerText.trim();
+        chatForm.dispatchEvent(new Event('submit'));
+      });
+    });
+
+    // Auto-resize textarea
+    userInput.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = this.scrollHeight + 'px';
+    });
+    userInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        chatForm.dispatchEvent(new Event('submit'));
+      }
+    });
+
+    // Modal Create RAG
+    btnOpenCreateRagModal.addEventListener('click', () => {
+      modalCreateRag.classList.remove('hidden');
+    });
+    modalCloseBtn.addEventListener('click', () => modalCreateRag.classList.add('hidden'));
+    modalCancelBtn.addEventListener('click', () => modalCreateRag.classList.add('hidden'));
+
+    createRagForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const rag_id = document.getElementById('new-rag-id').value.trim();
+      const name = document.getElementById('new-rag-name').value.trim();
+      const description = document.getElementById('new-rag-desc').value.trim();
+      const tags = document.getElementById('new-rag-tags').value.split(',').map(s => s.trim()).filter(Boolean);
+
+      try {
+        const res = await fetch('/api/rags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rag_id, name, description, tags })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Fallo al crear paquete');
+        }
+        modalCreateRag.classList.add('hidden');
+        createRagForm.reset();
+        await loadPackages();
+        // Switch into this newly created package!
+        openPackageBooks(rag_id);
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+
+    // ==========================================
+    // Fetch and Render Packages (VIEW A)
+    // ==========================================
+    async function loadPackages() {
+      try {
+        const res = await fetch('/api/rags');
+        if (!res.ok) throw new Error('Error al cargar paquetes');
+        const data = await res.json();
+        installedRags = data.rags || [];
+        headerPkgCount.innerText = installedRags.length;
+
+        renderDrawerHeaderPackages();
+        renderPackagesList(installedRags);
+      } catch (err) {
+        packagesList.innerHTML = `<div class="text-rose-400 text-xs p-4">Error cargando paquetes: ${err.message}</div>`;
+      }
+    }
+
+    function renderDrawerHeaderPackages() {
+      drawerHeaderContent.innerHTML = `
+        <span class="text-lg">📚</span>
+        <div>
+          <h2 class="font-bold text-sm text-white">Biblioteca y Paquetes RAG</h2>
+          <p class="text-[11px] text-slate-400">Selecciona un paquete para explorar y gestionar sus libros</p>
+        </div>
+      `;
+      viewPackages.classList.remove('hidden');
+      viewBooks.classList.add('hidden');
+      currentDrawerMode = 'packages';
+    }
+
+    function renderPackagesList(rags) {
+      if (!rags.length) {
+        packagesList.innerHTML = `<div class="text-slate-400 text-xs text-center p-8">No hay paquetes instalados. ¡Crea uno con el botón superior!</div>`;
+        return;
+      }
+
+      packagesList.innerHTML = rags.map(pkg => {
+        const isCurrentActive = pkg.rag_id === activeChatRagId;
+        const isRamLoaded = pkg.is_loaded;
+        return `
+          <div class="p-4 bg-slate-850 bg-slate-900/90 rounded-xl border ${isCurrentActive ? 'border-emerald-500/70 ring-1 ring-emerald-500/30' : 'border-slate-700/80 hover:border-slate-600'} transition shadow-md">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-sm text-white">${escapeHtml(pkg.name)}</span>
+                  ${isCurrentActive ? '<span class="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded">Activo en Chat</span>' : ''}
+                </div>
+                <p class="text-[11px] text-slate-400 mt-0.5">${escapeHtml(pkg.description || 'Sin descripción')}</p>
+                <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  <span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-slate-300">ID: ${pkg.rag_id}</span>
+                  ${(pkg.tags || []).map(t => `<span class="px-1.5 py-0.5 rounded bg-slate-800/80 text-[10px] text-teal-300">#${t}</span>`).join('')}
+                </div>
+              </div>
+            </div>
+
+            <!-- Dimensions Grid -->
+            <div class="grid grid-cols-4 gap-2 mt-3 pt-2.5 border-t border-slate-800 text-center text-xs">
+              <div class="p-1.5 rounded bg-slate-800/60">
+                <div class="text-emerald-400 font-bold">${pkg.total_documents || 0}</div>
+                <div class="text-[9px] text-slate-400">Libros</div>
+              </div>
+              <div class="p-1.5 rounded bg-slate-800/60">
+                <div class="text-teal-400 font-bold">${pkg.total_chunks || 0}</div>
+                <div class="text-[9px] text-slate-400">Chunks</div>
+              </div>
+              <div class="p-1.5 rounded bg-slate-800/60">
+                <div class="text-cyan-400 font-bold">${pkg.modalities?.length || 1}</div>
+                <div class="text-[9px] text-slate-400">Modalidades</div>
+              </div>
+              <div class="p-1.5 rounded bg-slate-800/60 flex flex-col justify-center items-center">
+                <span class="text-[10px] font-semibold ${isRamLoaded ? 'text-emerald-400' : 'text-slate-400'}">
+                  ${isRamLoaded ? '🟢 En RAM' : '⚪ En disco'}
+                </span>
+                <span class="text-[9px] text-slate-500">Memoria</span>
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-800">
+              <button
+                onclick="openPackageBooks('${pkg.rag_id}')"
+                class="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition flex items-center gap-1.5"
+              >
+                <span>📖 Ver Libros (${pkg.total_documents || 0})</span>
+              </button>
+
+              <div class="flex items-center gap-1.5">
+                <button
+                  onclick="toggleRamLoading('${pkg.rag_id}', ${isRamLoaded})"
+                  class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition"
+                  title="${isRamLoaded ? 'Descargar de RAM para liberar memoria' : 'Cargar embeddings a RAM para máxima velocidad'}"
+                >
+                  ${isRamLoaded ? 'Desocupar RAM' : 'Cargar en RAM'}
+                </button>
+
+                ${pkg.rag_id !== 'supervivencia-es' ? `
+                  <button
+                    onclick="deletePackage('${pkg.rag_id}')"
+                    class="p-1.5 rounded-lg bg-rose-950/30 hover:bg-rose-900/40 text-rose-400 border border-rose-800/40 text-xs transition"
+                    title="Eliminar este paquete de la base de conocimiento"
+                  >
+                    🗑️
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Toggle RAM loading
+    async function toggleRamLoading(ragId, currentlyLoaded) {
+      try {
+        const endpoint = currentlyLoaded ? `/api/rags/${ragId}/unload` : `/api/rags/${ragId}/load`;
+        await fetch(endpoint, { method: 'POST' });
+        await loadPackages();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    // Delete Package
+    async function deletePackage(ragId) {
+      if (confirm(`¿Estás seguro de que deseas eliminar permanentemente el paquete '${ragId}' y todos sus libros de la base de conocimiento?`)) {
+        try {
+          const res = await fetch(`/api/rags/${ragId}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Error al eliminar paquete');
+          if (activeChatRagId === ragId) {
+            activeChatRagId = 'supervivencia-es';
+          }
+          await loadPackages();
+        } catch (err) {
+          alert('Error: ' + err.message);
+        }
+      }
+    }
+
+    // ==========================================
+    // VIEW B: Books inside Package
+    // ==========================================
+    async function openPackageBooks(ragId) {
+      currentSelectedRagId = ragId;
+      const pkg = installedRags.find(r => r.rag_id === ragId) || { name: ragId, rag_id: ragId };
+
+      // Update header with back button
+      drawerHeaderContent.innerHTML = `
+        <button onclick="renderDrawerHeaderPackages()" class="px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition flex items-center gap-1">
+          ← Volver a Paquetes
+        </button>
+        <span class="text-xs text-slate-400">|</span>
+        <span class="font-bold text-sm text-emerald-400">📦 ${escapeHtml(pkg.name)}</span>
+      `;
+
+      document.getElementById('current-pkg-name').innerText = pkg.name;
+      viewPackages.classList.add('hidden');
+      viewBooks.classList.remove('hidden');
+      currentDrawerMode = 'books';
+
+      await loadBooksForPackage(ragId);
+    }
+
+    async function loadBooksForPackage(ragId) {
+      booksList.innerHTML = `<div class="text-center py-8 text-slate-500 text-xs animate-pulse">Cargando libros de ${ragId}...</div>`;
+      try {
+        const res = await fetch(`/api/rags/${ragId}/library`);
+        if (!res.ok) throw new Error('Error al cargar libros');
+        const data = await res.json();
+        currentPackageBooks = data.documents || [];
+
+        // Update stats banner
+        document.getElementById('current-pkg-stats').innerText = 
+          `${currentPackageBooks.length} libros • ${currentPackageBooks.reduce((acc, b) => acc + (b.page_count || 1), 0)} páginas • ${currentPackageBooks.reduce((acc, b) => acc + (b.chunk_count || 0), 0)} chunks`;
+
+        renderBooksList(currentPackageBooks);
+      } catch (err) {
+        booksList.innerHTML = `<div class="text-rose-400 text-xs p-4">Error cargando libros: ${err.message}</div>`;
+      }
+    }
+
+    function renderBooksList(books) {
+      if (!books.length) {
+        booksList.innerHTML = `
+          <div class="text-center py-12 text-slate-400 text-xs">
+            <p class="text-2xl mb-2">📚</p>
+            <p class="font-semibold text-slate-300">Este paquete no tiene libros todavía.</p>
+            <p class="text-slate-500 mt-1">Usa el botón superior <strong>+ Subir Libro / PDF</strong> para agregar conocimiento a este RAG.</p>
+          </div>
+        `;
+        return;
+      }
+
+      booksList.innerHTML = books.map(book => {
+        const sizeMb = (book.file_size_bytes / (1024 * 1024)).toFixed(2);
+        return `
+          <div class="p-3.5 bg-slate-900/90 rounded-xl border border-slate-700/80 hover:border-emerald-500/40 transition shadow-sm">
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-xs font-semibold text-slate-100 leading-snug break-words flex-1">
+                📄 ${escapeHtml(book.original_filename)}
+              </span>
+            </div>
+
+            <!-- Book metadata badges -->
+            <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-400 flex-wrap">
+              <span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700/60 text-slate-300">
+                📖 ${book.page_count || 1} págs
+              </span>
+              <span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700/60 text-teal-300">
+                🖼️ ${book.image_count || 0} imágenes
+              </span>
+              <span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700/60 text-slate-400">
+                💾 ${sizeMb} MB
+              </span>
+            </div>
+
+            <!-- Footer: SHA and Actions -->
+            <div class="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between">
+              <span class="text-[9px] font-mono text-slate-500 truncate max-w-[140px]" title="SHA256: ${book.sha256}">
+                SHA: ${book.sha256 ? book.sha256.substring(0, 10) + '...' : 'N/A'}
+              </span>
+
+              <div class="flex items-center gap-2">
+                <a
+                  href="/api/rags/${currentSelectedRagId}/library/download/${book.id}"
+                  target="_blank"
+                  class="px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-medium transition flex items-center gap-1"
+                >
+                  <span>Descargar</span> ↗
+                </a>
+
+                <button
+                  onclick="deleteBook('${book.id}', '${escapeHtml(book.original_filename)}')"
+                  class="p-1 rounded bg-rose-950/30 hover:bg-rose-900/40 text-rose-400 border border-rose-800/40 text-xs transition"
+                  title="Eliminar este libro de la base de conocimiento"
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Filter books in view B
+    searchBooksInput.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase();
+      const filtered = currentPackageBooks.filter(b => b.original_filename.toLowerCase().includes(q));
+      renderBooksList(filtered);
+    });
+
+    // Upload New Book into Package
+    btnUploadBook.addEventListener('click', () => {
+      bookFileInput.click();
+    });
+
+    bookFileInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      uploadStatusBanner.classList.remove('hidden');
+      uploadStatusText.innerText = `Subiendo y vectorizando '${file.name}' con EmbeddingGemma 2...`;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch(`/api/rags/${currentSelectedRagId}/library/upload`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Fallo al procesar el archivo');
+        }
+
+        uploadStatusText.innerText = `✓ '${file.name}' indexado con éxito!`;
+        setTimeout(() => uploadStatusBanner.classList.add('hidden'), 3000);
+
+        // Reload books list and packages
+        await loadBooksForPackage(currentSelectedRagId);
+        await loadPackages();
+      } catch (err) {
+        alert('Error al subir libro: ' + err.message);
+        uploadStatusBanner.classList.add('hidden');
+      } finally {
+        bookFileInput.value = '';
+      }
+    });
+
+    // Delete Book from Package
+    async function deleteBook(docId, filename) {
+      if (confirm(`¿Deseas eliminar '${filename}' de la base de conocimiento? Sus chunks vectorizados e imágenes se eliminarán y las dimensiones del RAG se recalcularán automáticamente.`)) {
+        try {
+          const res = await fetch(`/api/rags/${currentSelectedRagId}/library/${docId}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Error al eliminar libro');
+          await loadBooksForPackage(currentSelectedRagId);
+          await loadPackages();
+        } catch (err) {
+          alert('Error: ' + err.message);
+        }
+      }
+    }
+
+    // Bunker Mode Toggle state
+    const bunkerModeToggle = document.getElementById('bunker-mode-toggle');
+    const bunkerModeLabel = document.getElementById('bunker-mode-label');
+    const engineHeaderBadge = document.getElementById('engine-header-badge');
+
+    bunkerModeToggle.addEventListener('change', () => {
+      const isBunker = bunkerModeToggle.checked;
+      if (isBunker) {
+        bunkerModeLabel.innerText = '🛡️ Búnquer (Zero-LLM)';
+        bunkerModeLabel.className = 'font-bold text-amber-400';
+        engineHeaderBadge.className = 'px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1.5';
+        engineHeaderBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>🦀 Rust Core (Zero-LLM)';
+        userInput.placeholder = 'Escriu una emergència o consulta... (Triatge <1ms + Extracció Exacta)';
+      } else {
+        bunkerModeLabel.innerText = '💬 Foto Finish (Gemma 4)';
+        bunkerModeLabel.className = 'font-bold text-emerald-400';
+        engineHeaderBadge.className = 'px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5';
+        engineHeaderBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>🦀 Rust Core + Gemma 4 E4B';
+        userInput.placeholder = 'Pregunta el que vulguis als manuals... (Foto finish conversacional)';
+      }
+    });
+
+    // ==========================================
+    // Chat Message Handling
+    // ==========================================
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const message = userInput.value.trim();
+      if (!message) return;
+
+      const isBunker = bunkerModeToggle.checked;
+
+      appendUserMessage(message);
+      userInput.value = '';
+      userInput.style.height = 'auto';
+
+      const thinkingId = appendThinkingMessage(isBunker);
+      sendBtn.disabled = true;
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message,
+            rag_id: activeChatRagId,
+            zero_llm: isBunker,
+            dim: 256
+          })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `Error ${response.status}`);
+        }
+
+        const data = await response.json();
+        removeThinkingMessage(thinkingId);
+        appendAgentMessage(data.reply, data.citations, data.rag_id || activeChatRagId, data);
+
+      } catch (err) {
+        removeThinkingMessage(thinkingId);
+        appendErrorMessage(err.message);
+      } finally {
+        sendBtn.disabled = false;
+        userInput.focus();
+      }
+    });
+
+    function appendUserMessage(text) {
+      const div = document.createElement('div');
+      div.className = 'flex items-start justify-end space-x-3 max-w-3xl ml-auto';
+      div.innerHTML = `
+        <div class="bg-emerald-600 text-white rounded-2xl rounded-tr-none px-4 py-3 shadow-md max-w-xl text-sm leading-relaxed">
+          ${escapeHtml(text)}
+        </div>
+        <div class="w-8 h-8 rounded-lg bg-emerald-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
+          Tú
+        </div>
+      `;
+      messagesContainer.appendChild(div);
+      scrollToBottom();
+    }
+
+    function appendThinkingMessage(isBunker = false) {
+      const id = 'thinking-' + Date.now();
+      const div = document.createElement('div');
+      div.id = id;
+      div.className = 'flex items-start space-x-3 max-w-3xl';
+      
+      const badgeColor = isBunker ? 'bg-amber-400' : 'bg-emerald-400';
+      const statusText = isBunker
+        ? `⚡ Triatge Kev (<1ms) + Cerca SIMD Matryoshka (Mode Búnquer Zero-LLM)...`
+        : `🧠 Kev avaluant tota la biblioteca amb Gemma 4 E4B i citacions oficials...`;
+
+      div.innerHTML = `
+        <div class="w-9 h-9 rounded-lg ${isBunker ? 'bg-amber-600/30 border border-amber-500/50' : 'bg-emerald-600/30 border border-emerald-500/50'} flex items-center justify-center text-lg flex-shrink-0 animate-pulse">
+          ${isBunker ? '⚡' : '🧠'}
+        </div>
+        <div class="bg-slate-800/80 border border-slate-700 rounded-2xl rounded-tl-none px-4 py-3 shadow-sm flex items-center space-x-2 text-xs text-slate-300">
+          <div class="flex space-x-1">
+            <div class="w-2 h-2 rounded-full ${badgeColor} animate-bounce"></div>
+            <div class="w-2 h-2 rounded-full ${badgeColor} animate-bounce [animation-delay:0.2s]"></div>
+            <div class="w-2 h-2 rounded-full ${badgeColor} animate-bounce [animation-delay:0.4s]"></div>
+          </div>
+          <span>${statusText}</span>
+        </div>
+      `;
+      messagesContainer.appendChild(div);
+      scrollToBottom();
+      return id;
+    }
+
+    function removeThinkingMessage(id) {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    }
+
+    function appendAgentMessage(markdownText, citations = [], ragId = '', telemetry = null) {
+      const div = document.createElement('div');
+      div.className = 'flex items-start space-x-3 max-w-3xl';
+
+      let htmlContent = marked.parse(markdownText || 'Sin respuesta.');
+
+      // Map image URLs so relative assets/ or images/ are loaded via proxy
+      htmlContent = htmlContent.replace(/src="(?:assets\/|images\/)?([^"]+\.(?:png|jpg|jpeg|webp|svg))"/g, 'src="/api/assets/$1"');
+      htmlContent = htmlContent.replace(/!\[([^\]]*)\]\((?:assets\/|images\/)?([^)]+\.(?:png|jpg|jpeg|webp|svg))\)/g, '![$1](/api/assets/$2)');
+
+      // Transform citation tags into clickable interactive pills
+      htmlContent = htmlContent.replace(/\[📖 Manual:\s*([^,\]]+)(?:,\s*Pàg\.?\s*(\d+))?\]/g, (match, doc, page) => {
+        const pageText = page ? `Pág. ${page}` : '';
+        return `<span class="citation-badge" title="Referencia en la biblioteca">📖 ${doc.trim()} ${pageText}</span>`;
+      });
+
+      // Construct telemetry header badge if returned by Rust Core
+      let telemetryHtml = '';
+      if (telemetry) {
+        const isZeroLlm = Boolean(telemetry.zero_llm);
+        const modeBadge = isZeroLlm
+          ? `<span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">⚡ Mode Búnquer (Zero-LLM)</span>`
+          : `<span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">💬 Foto Finish (Gemma 4)</span>`;
+
+        let triageInfo = '';
+        if (telemetry.triage) {
+          triageInfo = `<span class="text-slate-400">•</span> <span>Triatge: <strong class="text-amber-300 font-mono">${telemetry.triage.decision_latency_ms?.toFixed(2)} ms</strong> [${telemetry.triage.category} - ${telemetry.triage.urgency}]</span>`;
+        }
+
+        let latencyInfo = '';
+        if (telemetry.latency_ms) {
+          latencyInfo = `<span class="text-slate-400">•</span> <span>Temps Total: <strong class="text-sky-400 font-mono">${telemetry.latency_ms?.toFixed(1)} ms</strong></span>`;
+        }
+
+        telemetryHtml = `
+          <div class="mb-3 px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-700/80 flex flex-wrap items-center gap-2 text-[11px] text-slate-300 shadow-inner">
+            ${modeBadge}
+            ${triageInfo}
+            ${latencyInfo}
+            <span class="text-slate-400">•</span>
+            <span class="text-indigo-400 font-semibold font-mono">🦀 Motor Rust Natiu</span>
+          </div>
+        `;
+      }
+
+      div.innerHTML = `
+        <div class="w-9 h-9 rounded-lg ${telemetry?.zero_llm ? 'bg-amber-600/30 border border-amber-500/50' : 'bg-emerald-600/30 border border-emerald-500/50'} flex items-center justify-center text-lg flex-shrink-0">
+          ${telemetry?.zero_llm ? '⚡' : '🧠'}
+        </div>
+        <div class="flex-1 bg-slate-800/90 border border-slate-700 rounded-2xl rounded-tl-none p-5 shadow-sm">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold ${telemetry?.zero_llm ? 'text-amber-400' : 'text-emerald-400'} text-sm">${telemetry?.agent || 'Kev (Gemma 4 E4B)'}</span>
+            <span class="px-2 py-0.5 rounded text-[10px] bg-slate-700 text-slate-300">RAG: ${escapeHtml(ragId)}</span>
+          </div>
+          ${telemetryHtml}
+          <div class="prose text-slate-200 text-sm leading-relaxed">
+            ${htmlContent}
+          </div>
+        </div>
+      `;
+      messagesContainer.appendChild(div);
+      scrollToBottom();
+    }
+
+    function appendErrorMessage(errorMsg) {
+      const div = document.createElement('div');
+      div.className = 'flex items-start space-x-3 max-w-3xl';
+      div.innerHTML = `
+        <div class="w-9 h-9 rounded-lg bg-rose-600/30 border border-rose-500/50 flex items-center justify-center text-lg flex-shrink-0">
+          ⚠️
+        </div>
+        <div class="flex-1 bg-rose-950/30 border border-rose-800/50 rounded-2xl rounded-tl-none p-4 shadow-sm text-sm text-rose-300">
+          <strong>Error de comunicación:</strong> ${escapeHtml(errorMsg)}
+        </div>
+      `;
+      messagesContainer.appendChild(div);
+      scrollToBottom();
+    }
+
+    function scrollToBottom() {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function escapeHtml(string) {
+      return String(string).replace(/[&<>"'`=\/]/g, function (s) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+          '/': '&#x2F;',
+          '`': '&#x60;',
+          '=': '&#x3D;'
+        }[s];
+      });
+    }
+
+    // Startup
+    loadPackages();
+  </script>
+</body>
+</html>

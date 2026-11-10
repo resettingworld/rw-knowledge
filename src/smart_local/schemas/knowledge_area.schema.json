@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://smartlocal.ai/schemas/knowledge-capsule-v1.json",
+  "title": "KnowledgeCapsuleMetadata",
+  "description": "Especificació formal per a les càpsules temàtiques modulars RAG (InfoLibros / SmartLocal).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "name",
+    "description",
+    "category",
+    "domain",
+    "portal_source",
+    "books",
+    "rag_spec"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Versió semàntica del format de metadades (e.g., '1.0.0').",
+      "default": "1.0.0"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "description": "Identificador canònic de la càpsula modular (slug del tema específic, p.e. 'ciencias-de-la-tierra', 'algoritmo')."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 150,
+      "description": "Nom complet del tema de la càpsula (e.g., 'Ciencias de la Tierra', 'Algoritmos y Programación')."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Descripció exhaustiva del contingut temàtic de la càpsula."
+    },
+    "category": {
+      "type": "object",
+      "required": ["slug", "name", "url"],
+      "description": "Macro-categoria o àrea de pertinença (e.g., 'ciencias', 'informatica').",
+      "properties": {
+        "slug": { "type": "string" },
+        "name": { "type": "string" },
+        "url": { "type": "string", "format": "uri" }
+      }
+    },
+    "domain": {
+      "type": "string",
+      "description": "Macro-domini disciplinar (e.g., 'Ciencias Exactas y Naturales', 'Tecnología e Informática')."
+    },
+    "language": {
+      "type": "string",
+      "default": "es",
+      "description": "Codi ISO de l'idioma dels llibres."
+    },
+    "portal_source": {
+      "type": "object",
+      "required": ["name", "url", "scraped_at"],
+      "description": "Procedència web directa de la càpsula a InfoLibros.",
+      "properties": {
+        "name": { "type": "string", "default": "InfoLibros" },
+        "url": { "type": "string", "format": "uri" },
+        "scraped_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Etiquetes semàntiques per a cerca i recuperació."
+    },
+    "subtopics_covered": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Subtemes i continguts clau tractats dins de la càpsula."
+    },
+    "cover_image": {
+      "type": "object",
+      "description": "Banner visual de la càpsula generat amb Banana Pi.",
+      "properties": {
+        "rel_path": { "type": "string", "default": "images/banner.png" },
+        "prompt": { "type": "string" },
+        "generator": { "type": "string", "default": "banana-pi" },
+        "width": { "type": "integer" },
+        "height": { "type": "integer" }
+      }
+    },
+    "books": {
+      "type": "array",
+      "description": "Col·lecció completa de llibres en PDF que componen la càpsula.",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "filename", "file_size_bytes", "sha256"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "author": { "type": "string" },
+          "filename": { "type": "string" },
+          "source_url": { "type": "string", "format": "uri" },
+          "file_size_bytes": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "page_count": { "type": "integer", "minimum": 1 },
+          "key_topics": { "type": "array", "items": { "type": "string" } },
+          "images_extracted": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "rag_spec": {
+      "type": "object",
+      "required": ["rag_id", "embedding_model", "generator_model", "index_db"],
+      "description": "Especificació de la base de dades vectorial SQLite i models de la càpsula RAG.",
+      "properties": {
+        "rag_id": { "type": "string" },
+        "embedding_model": { "type": "string", "default": "embeddinggemma-2" },
+        "generator_model": { "type": "string", "default": "gemma-4-e4b" },
+        "chunk_size": { "type": "integer", "default": 500 },
+        "chunk_overlap": { "type": "integer", "default": 50 },
+        "index_db": { "type": "string", "default": "index.db" },
+        "total_documents": { "type": "integer", "default": 0 },
+        "total_chunks": { "type": "integer", "default": 0 },
+        "total_images_extracted": { "type": "integer", "default": 0 }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "properties": {
+        "total_books": { "type": "integer", "minimum": 0 },
+        "total_pages": { "type": "integer", "minimum": 0 },
+        "total_size_mb": { "type": "number", "minimum": 0 }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}
